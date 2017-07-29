@@ -15,12 +15,11 @@ type Connection struct {
 	Password string
 	ApiKey   string
 	AuthType string
-	Client   *http.Client
+	client   *http.Client
 }
 
 func generatePassphrase(password string) string {
-	now := time.Now()
-	utime := now.Unix()
+	utime := time.Now().Unix()
 
 	key := sha256.New()
 	key.Write([]byte(password))
