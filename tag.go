@@ -17,6 +17,6 @@ type Tag struct {
 
 type TagInfo struct {
 	ID    string `xml:"id,attr"`
-	Count string `xml:count,attr"`
+	Count string `xml:"count,attr"`
 	Value string `xml:",chardata"`
 }

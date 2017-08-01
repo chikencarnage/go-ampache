@@ -52,14 +52,16 @@ func NewConnection(url string) *Connection {
 func (c *Connection) PasswordAuth(username, password string) error {
 	hashinfo, err := generatePassphrase(password)
 	response, err := c.client.Get(fmt.Sprintf("%s/%saction=handshake&auth=%s&timestamp=%d&version=%d&user=%s", c.Host, apipath, hashinfo.hash, hashinfo.time, c.APIVersion, username))
-	defer response.Body.Close()
 	if err != nil {
+		response.Body.Close()
 		return err
 	} else if response.StatusCode != 200 {
 		// TODO (David Splittberger) Put a better error message here. Include the HTTP status message
+		response.Body.Close()
 		return fmt.Errorf("Did not get 200 response code. Got %d", response.StatusCode)
 	}
 
+	defer response.Body.Close()
 	err = xml.NewDecoder(response.Body).Decode(&c.auth)
 	if err != nil {
 		// TODO (David Splitberger) If we failed to decode, we probably got an xml error from the server
@@ -73,12 +75,14 @@ func (c *Connection) PasswordAuth(username, password string) error {
 // APIAuth authenticates with the host defined in *Connection using an APIKey
 func (c *Connection) APIAuth(apiKey string) error {
 	response, err := c.client.Get(fmt.Sprintf("%s/%saction=handshake&auth=%s&version=%d", c.Host, apipath, apiKey, c.APIVersion))
-	defer response.Body.Close()
 	if err != nil {
+		response.Body.Close()
 		return err
 	} else if response.StatusCode != 200 {
+		response.Body.Close()
 		return fmt.Errorf("Did not get 200 response code. Got %d", response.StatusCode)
 	}
+	defer response.Body.Close()
 
 	err = xml.NewDecoder(response.Body).Decode(&c.auth)
 	if err != nil {

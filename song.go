@@ -1,6 +1,7 @@
 package ampache
 
-type SongResult struct {
+type SongResults struct {
+	count int
 	Songs []Song `xml:"song"`
 }
 

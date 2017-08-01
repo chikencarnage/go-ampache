@@ -11,3 +11,7 @@ type Search struct {
 func NewSearch(filter string) *Search {
 	return &Search{Filter: filter}
 }
+
+func includeToString([]string) string {
+	return "string"
+}
