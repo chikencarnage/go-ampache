@@ -6,18 +6,21 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"path"
+	"strconv"
 	"time"
 )
 
 const (
-	apipath    string = "server/xml.server.php?"
-	apiversion uint32 = 350001
+	apiuri     string = "server/xml.server.php"
+	apiversion int64  = 350001
 )
 
 // Connection holds the general connection parameters
 type Connection struct {
 	Host       string
-	APIVersion uint32
+	APIVersion int64
 	auth       Auth
 	client     *http.Client
 	passphrase passphrase
@@ -40,33 +43,50 @@ type Auth struct {
 
 type passphrase struct {
 	hash string
-	time int32
+	time int64
 }
 
 // NewConnection will return a Connection object specifying APIVersion to use and an http client
-func NewConnection(url string) *Connection {
-	return &Connection{Host: url, APIVersion: apiversion, client: makeHTTPClient()}
+func NewConnection(host string) *Connection {
+	// create the full api url
+	u, err := url.Parse(host)
+	// TODO (David Splittberger) handle this for real
+	if err != nil {
+		log.Println("um, fix me")
+	}
+	u.Path = path.Join(u.Path, apiuri)
+	return &Connection{Host: u.String(), APIVersion: apiversion, client: makeHTTPClient()}
 }
 
 // PasswordAuth authenticates with the host defined in *Connection using usename/password
 func (c *Connection) PasswordAuth(username, password string) error {
 	hashinfo, err := generatePassphrase(password)
-	response, err := c.client.Get(fmt.Sprintf("%s/%saction=handshake&auth=%s&timestamp=%d&version=%d&user=%s", c.Host, apipath, hashinfo.hash, hashinfo.time, c.APIVersion, username))
+
+	req := makeHTTPRequest(c.Host, map[string]string{
+		"action":    "handshake",
+		"auth":      hashinfo.hash,
+		"timestamp": strconv.FormatInt(hashinfo.time, 10),
+		"version":   strconv.FormatInt(c.APIVersion, 10),
+		"username":  username,
+	})
+
+	response, err := c.client.Do(req)
 	if err != nil {
-		response.Body.Close()
 		return err
-	} else if response.StatusCode != 200 {
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != 200 {
 		// TODO (David Splittberger) Put a better error message here. Include the HTTP status message
-		response.Body.Close()
 		return fmt.Errorf("Did not get 200 response code. Got %d", response.StatusCode)
 	}
 
-	defer response.Body.Close()
 	err = xml.NewDecoder(response.Body).Decode(&c.auth)
 	if err != nil {
 		// TODO (David Splitberger) If we failed to decode, we probably got an xml error from the server
 		// We need to try and unmarshal to a xml error struct
 		log.Printf("failed to unmarshal\n%s", err)
+		return err
 	}
 
 	return nil
@@ -74,19 +94,26 @@ func (c *Connection) PasswordAuth(username, password string) error {
 
 // APIAuth authenticates with the host defined in *Connection using an APIKey
 func (c *Connection) APIAuth(apiKey string) error {
-	response, err := c.client.Get(fmt.Sprintf("%s/%saction=handshake&auth=%s&version=%d", c.Host, apipath, apiKey, c.APIVersion))
+	req := makeHTTPRequest(c.Host, map[string]string{
+		"action":  "handshake",
+		"auth":    apiKey,
+		"version": strconv.FormatInt(c.APIVersion, 10),
+	})
+
+	response, err := c.client.Do(req)
 	if err != nil {
-		response.Body.Close()
 		return err
-	} else if response.StatusCode != 200 {
-		response.Body.Close()
-		return fmt.Errorf("Did not get 200 response code. Got %d", response.StatusCode)
 	}
 	defer response.Body.Close()
 
+	if response.StatusCode != 200 {
+		return fmt.Errorf("Did not get 200 response code. Got %d", response.StatusCode)
+	}
+
 	err = xml.NewDecoder(response.Body).Decode(&c.auth)
 	if err != nil {
-		log.Printf("failed to unmarshal")
+		log.Printf("failed to unmarshal\n%s", err)
+		return err
 	}
 
 	return nil
@@ -94,7 +121,13 @@ func (c *Connection) APIAuth(apiKey string) error {
 
 // Ping will prolong a session by contacting the ampache server using the ping method
 func (c *Connection) Ping() {
-	response, err := c.client.Get(fmt.Sprintf("%s/%saction=ping&auth=%s", c.Host, apipath, c.auth.Token))
+	// create the http request
+	req := makeHTTPRequest(c.Host, map[string]string{
+		"action": "ping",
+		"auth":   c.auth.Token,
+	})
+
+	response, err := c.client.Do(req)
 	if err != nil {
 		response.Body.Close()
 		panic("Ping failed! Please fix me to fail gracefully!")
@@ -105,7 +138,7 @@ func (c *Connection) Ping() {
 }
 
 func generatePassphrase(password string) (passphrase, error) {
-	utime := int32(time.Now().Unix())
+	utime := time.Now().Unix()
 	info := passphrase{time: utime}
 
 	hashOne := sha256.New()
@@ -133,4 +166,16 @@ func makeHTTPClient() *http.Client {
 	}
 
 	return client
+}
+
+func makeHTTPRequest(host string, params map[string]string) *http.Request {
+	req, _ := http.NewRequest("GET", host, nil)
+
+	query := req.URL.Query()
+	for k, v := range params {
+		query.Add(k, v)
+	}
+
+	req.URL.RawQuery = query.Encode()
+	return req
 }
