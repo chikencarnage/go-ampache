@@ -3,6 +3,7 @@ package ampache
 import (
 	"crypto/sha256"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -39,6 +40,7 @@ type Auth struct {
 	Albums   string `xml:"albums"`         // number of albums
 	Catalogs string `xml:"catalogs"`       // number of tags
 	Videos   string `xml:"videos"`         // number of videos
+	Error    string `xml:"error"`          // authentication errors
 }
 
 type passphrase struct {
@@ -61,13 +63,16 @@ func NewConnection(host string) *Connection {
 // PasswordAuth authenticates with the host defined in *Connection using usename/password
 func (c *Connection) PasswordAuth(username, password string) error {
 	hashinfo, err := generatePassphrase(password)
+	if err != nil {
+		return err
+	}
 
 	req := makeHTTPRequest(c.Host, map[string]string{
 		"action":    "handshake",
 		"auth":      hashinfo.hash,
 		"timestamp": strconv.FormatInt(hashinfo.time, 10),
 		"version":   strconv.FormatInt(c.APIVersion, 10),
-		"username":  username,
+		"user":      username,
 	})
 
 	response, err := c.client.Do(req)
@@ -87,6 +92,10 @@ func (c *Connection) PasswordAuth(username, password string) error {
 		// We need to try and unmarshal to a xml error struct
 		log.Printf("failed to unmarshal\n%s", err)
 		return err
+	}
+
+	if c.auth.Error != "" {
+		return errors.New(c.auth.Error)
 	}
 
 	return nil
